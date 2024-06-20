@@ -13,9 +13,12 @@ void LuaEntry_Test_Inputs(char* in) {
     ParseOut* po = LuaParse_Generate_Tree(tks);
     LuaParse_Print_Tree(po);
 
-    PtrVec* ops = LuaOP_Generate(po);
+    //PtrVec* ops = LuaOP_Generate(po);
+    
+    PtrVec* go = LuaGen_x86_64_Linux(po);
 
     LuaLexer_Free(tks);
     LuaParse_Free_Tree(po);
-    LuaOP_Free_Output(ops);
+    LuaGen_Free(go);
+    //LuaOP_Free_Output(ops);
 }

@@ -12,13 +12,26 @@
 static char* add_quotes_to_string(char* str) {
     size_t ln = strlen(str);
     char* x = LuaMem_Zeroalloc(ln+3);
-    x[0] = '"';
-    x[ln+1] = '"';
-    for (int i = 0; i < ln; i++)
-        x[i+1] = str[i];
+    sprintf(x, "\"%s\"\0", str);
+    return x;
+}
+/* MAKES NEW STRING WITH HEAP ALLOCATION */
+static char* remove_quotes_from_string(char* str) {
+    size_t ln = strlen(str);
+    char* x = LuaMem_Zeroalloc(ln);
+    for (int i = 1; i < ln-1; i++)
+        x[i-1] = str[i];
     return x;
 }
 
+static StringLiteral* retrieve_string_literal(char* lbl, GenState* gs) {
+    for (int i = 0; i < gs->glb.string_literals->siz; i++) {
+        StringLiteral* sl = gs->glb.string_literals->items[i];
+        if (strcmp(sl->lbl, lbl) == 0)
+            return sl;
+    }
+    return NULL;
+}
 
 
 /* assembly funcs */
@@ -53,12 +66,18 @@ static char** exit_asm(void) {
     return x;
 }
 static char** syswrite_fixed_siz(int STDBUFFER, char* LABEL_NAME, int LABEL_SIZ) {
-    char** x = LuaMem_Alloc(20*5);
-    x[0] = "mov $1, %rax";
-    sprintf(x[1], "mov $%d, %rdi", STDBUFFER);
-    sprintf(x[2], "lea %s, %rsi", LABEL_NAME);
-    sprintf(x[3], "mov $%d, %rdx", LABEL_SIZ);
-    x[4] = "syscall";
+    char** x = LuaMem_Alloc(sizeof(void*)*5);
+    cpystrto_asm(x, 0, 20, "mov $1, %rax");
+    char stdbufuh[20];
+    char lblnmbufuh[20];
+    char lblsizbufuh[20];
+    sprintf(stdbufuh, "mov $%d, %rdi", STDBUFFER);
+    sprintf(lblnmbufuh, "mov %s, %rsi", LABEL_NAME);
+    sprintf(lblsizbufuh, "mov $%d, %rdx", LABEL_SIZ);
+    cpystrto_asm(x, 1, 20, stdbufuh);
+    cpystrto_asm(x, 2, 20, lblnmbufuh);
+    cpystrto_asm(x, 3, 20, lblsizbufuh);
+    cpystrto_asm(x, 4, 8, "syscall");
     return x;
 }
 static int strlit_counter = 0;
@@ -89,10 +108,12 @@ static void create_string_literal(PtrVec* go, GenState* gs, Node* nd) {
     char* quote_str = add_quotes_to_string(nd->v);
     push_func(string_literal_asm, (quote_str), 2, AFNC_NULL, gs);
     char* lbl = LuaMem_Zeroalloc(9);
-    sprintf(lbl, "\"SL%d", strlit_counter-1);
+    sprintf(lbl, "\"SL%d\0", strlit_counter-1);
 
     StringLiteral* sl = LuaMem_Alloc(sizeof(StringLiteral));
-    sl->lbl = strdup(lbl);
+    sl->lbl = LuaMem_Zeroalloc(strlen(lbl));
+    for (int i = 1; i < strlen(lbl); i++)
+        sl->lbl[i-1] = lbl[i];
     sl->v = strdup(quote_str);
     LuaUtil_PtrVec_Push(gs->glb.string_literals, sl);
 
@@ -131,7 +152,25 @@ static inline void rodata_stage(PtrVec* go, GenState* gs, ParseOut* po) {
 /*********/
 /* logic */
 static inline void call_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
-   
+  
+    for (int i = 0; i < nd->next.s; i++) {
+        Node* nxt = nd->next.r[i];
+
+        switch (nxt->v[0]) {
+            case '"':
+                /* string literal */
+                char* lbl = LuaMem_Zeroalloc(strlen(nxt->v));
+                for (int j = 1; j < strlen(nxt->v); j++)
+                    lbl[j-1] = nxt->v[j];
+                StringLiteral* sl = retrieve_string_literal(lbl, gs);
+                char* v = remove_quotes_from_string(sl->v);
+                size_t sz = strlen(v);
+                push_func(syswrite_fixed_siz, (1, lbl, sz), 5, AFNC_SYSWRITE_FIXED_SIZ, gs);
+                LuaMem_Free(v);
+                break;
+        }
+    }
+
 }
 static void evaluate_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
     switch (nd->k) {
@@ -176,7 +215,7 @@ PtrVec* LuaGen_x86_64_Linux(ParseOut* po) {
 
     /* #3: logic */
     push_func(logic_unit_start, (), 3, AFNC_NULL, (&gs));
-    logic_stage(go, &gs, go);
+    logic_stage(go, &gs, po);
     push_func(jmp_exit, (0), 2, AFNC_NULL, (&gs));
 
     /* finish */
