@@ -188,3 +188,26 @@ typedef struct OPState {
 // ptrvec of OPCodeLine's
 PtrVec* LuaOP_Generate(ParseOut* po);
 void LuaOP_Free_Output(PtrVec* pv);
+
+/* lgen.c */
+typedef struct StringLiteral {
+    char* lbl; // asm name
+    char* v;
+} StringLiteral;
+typedef enum AsmFNCalls {
+    AFNC_NULL,
+    AFNC_SYSWRITE_FIXED_SIZ,
+
+} AsmFNCalls;
+typedef struct GenState {
+    
+    struct glb {
+        PtrVec* string_literals; // StringLiteral**
+    } glb; // global
+    
+    AsmFNCalls last_asm_fn_call;
+} GenState;
+
+// ptrvec char** btw
+PtrVec* LuaGen_x86_64_Linux(ParseOut* po);
+void LuaGen_Free(PtrVec* go);
