@@ -43,6 +43,15 @@ typedef enum TKKind {
     TK_SEMICOLON,
     TK_COLON,
     TK_QUOTE,
+    TK_COMMA,
+    TK_OPEN_SQUIRLY,
+    TK_CLOSE_SQUIRLY,
+    TK_GREATER_THAN,
+    TK_LESS_THAN,
+    TK_EQUAL_EQUAL,
+    TK_GREATER_EQUAL,
+    TK_LESS_EQUAL,
+    TK_EQUAL,
 
 } TKKind;
 
@@ -96,6 +105,11 @@ typedef enum NDKind {
     ND_GENERIC_GLOBAL,
     ND_BOOLEAN_LITERAL,
     ND_TYPE,
+    ND_GREATER_THAN,
+    ND_LESS_THAN,
+    ND_EQUAL_EQUAL,
+    ND_GREATER_EQUAL,
+    ND_LESS_EQUAL,
 
     /* declarations */
     ND_VARIABLE_DECLARATION,
@@ -103,7 +117,7 @@ typedef enum NDKind {
 
     /* statements */
     ND_CALL_STATEMENT,
-
+    ND_IF_STATEMENT,
 
     /* expressions */
 
@@ -197,12 +211,23 @@ typedef struct StringLiteral {
 typedef enum AsmFNCalls {
     AFNC_NULL,
     AFNC_SYSWRITE_FIXED_SIZ,
+    AFNC_BINARY_IF,
+    AFNC_BINARY_IF_LBL,
+    AFNC_RET,
+    AFNC_BINARY_IF_RET,
 
 } AsmFNCalls;
+typedef struct AsmFutureScope {
+    char* lbl;
+    Node* nd;
+} AsmFutureScope;
 typedef struct GenState {
     
     struct glb {
         PtrVec* string_literals; // StringLiteral**
+        struct {
+            PtrVec* cmps;
+        } future_scopes; // AsmFutureScope collection
     } glb; // global
     
     AsmFNCalls last_asm_fn_call;

@@ -9,7 +9,7 @@
 
 /* globals that are function calls */
 static const char* fglobals[] = {
-    "print",
+    "print", "println"
 };
 
 
@@ -91,6 +91,17 @@ static inline void literal(ParseState* ps, Token* tk) {
     NDKind k;
     switch (tk->k) {
         case TK_STRING:
+            switch (access_last_scope(ps)->k) {
+                case SCOPE_CALL:
+                    /* println check */
+                    if (strcmp(access_last_scope(ps)->nd->v, "println")==0) {
+                        char* newstr = LuaMem_Zeroalloc(strlen(tk->v)+3);
+                        sprintf(newstr, "%s\\n\0", tk->v);
+                        LuaMem_Free(tk->v);
+                        tk->v = newstr;
+                    }
+                    break;
+            }
             k = ND_STRING_LITERAL;
             break;
         case TK_NUMERIC:
@@ -108,7 +119,11 @@ static inline void keyword(ParseState* ps, Token* tk) {
     if (strcmp(tk->v, "local") == 0) {
         
     }
-
+    if (strcmp(tk->v, "if") == 0) {
+       make_nd_routine(ND_IF_STATEMENT, tk);
+       set_nd_next(ps->next, nd);
+       auto_next(ps);
+    }
 }
 static inline void function_call(ParseState* ps, Token* tk) {
     make_nd_routine(ND_CALL_STATEMENT, tk);
@@ -138,6 +153,10 @@ static inline void open_paren(ParseState* ps, Token* tk) {
             Scope* sp = create_scope(SCOPE_CALL, ps->next);
             insert_scope_to_ps(sp, ps);
             break;
+        case ND_IF_STATEMENT: {
+            Scope* sp = create_scope(SCOPE_CLAUSE, ps->next);
+            insert_scope_to_ps(sp, ps);
+            break;}
     }
 }
 static inline void close_paren(ParseState* ps, Token* tk) {
@@ -153,8 +172,50 @@ static inline void close_paren(ParseState* ps, Token* tk) {
             break;
     }
 }
+static inline void close_squirly(ParseState* ps, Token* tk) {
+    
+    /* scope removal */
+    switch (access_last_scope(ps)->k) {
+        case SCOPE_CLAUSE:
+            pop_scope(ps);
+            ps->set_next_to_scope = true;
+            break;
+    }
+}
+static inline void comma(ParseState* ps, Token* tk) {
+    switch(access_last_scope(ps)->k) {
+        case SCOPE_CALL:
+            ps->set_next_to_scope = true;
+            break;
+    } 
+}
 static inline void colon(ParseState* ps, Token* tk) {
     
+}
+static inline void binary_operator(ParseState* ps, Token* tk) {
+    NDKind k;
+
+    switch (tk->k) {
+        case TK_GREATER_THAN:
+            k = ND_GREATER_THAN;
+            break;
+        case TK_GREATER_EQUAL:
+            k = ND_GREATER_EQUAL;
+            break;
+        case TK_LESS_THAN:
+            k = ND_LESS_THAN;
+            break;
+        case TK_LESS_EQUAL:
+            k = ND_LESS_EQUAL;
+            break;
+        case TK_EQUAL_EQUAL:
+            k = ND_EQUAL_EQUAL;
+            break;
+    }
+
+    make_nd_routine(k, tk);
+    set_nd_next(ps->next, nd);
+    auto_next(ps);
 }
 
 static inline void consume_tokens(ParseState* ps, LexerOut* lo) {
@@ -165,6 +226,7 @@ static inline void consume_tokens(ParseState* ps, LexerOut* lo) {
         switch (tk->k) {
             case TK_QUOTE:
                 break;
+            case TK_OPEN_SQUIRLY:
             case TK_SEMICOLON:
                 ps->set_next_to_scope = true;
                break;
@@ -176,6 +238,20 @@ static inline void consume_tokens(ParseState* ps, LexerOut* lo) {
                 break;
             case TK_CLOSE_PAREN:
                 close_paren(ps, tk);
+                break;
+            case TK_COMMA:
+                comma(ps, tk);
+                break;
+            case TK_CLOSE_SQUIRLY:
+                close_squirly(ps, tk);
+                break;
+
+            case TK_GREATER_THAN:
+            case TK_GREATER_EQUAL:
+            case TK_LESS_THAN:
+            case TK_LESS_EQUAL:
+            case TK_EQUAL_EQUAL:
+                binary_operator(ps, tk);
                 break;
             
             case TK_GLOBAL:

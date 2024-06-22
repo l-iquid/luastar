@@ -12,10 +12,10 @@
 #define LEXER_TKLST_REALLOC_CAP 8
 
 static const char* lkeywords[] = {
-    "local",
+    "local", "if"
 };
 static const char* lglobals[] = {
-    "print",
+    "print", "println"
 };
 static const char* ltypes[] = {
     "string",
@@ -109,6 +109,17 @@ static void clr_tkbuf(LexState* ls) {
     inesrt_tk_from_ls(TK_IDENTIFIER);                 \
     push_tk_ls(ls, make_tk(k,v,ls->line,ls->column));
 
+#define tk_twochar(k1,v1,k2,v2) \
+    switch (look[1]) {          \
+        case '=': /* use 2 */   \
+            tk_onechar(k2, v2); \
+            *look++;            \
+            break;              \
+        default: /* use 1 */    \
+            tk_onechar(k1, v1); \
+            break;              \
+    }
+
 /********/
 /* MAIN */
 /********/
@@ -124,6 +135,12 @@ static inline void source_look(LexState* ls, char* in) {
             case ')': tk_onechar(TK_CLOSE_PAREN, ")"); break;
             case ';': tk_onechar(TK_SEMICOLON, ";"); break;
             case ':': tk_onechar(TK_COLON, ":"); break;
+            case ',': tk_onechar(TK_COMMA, ","); break;
+            case '{': tk_onechar(TK_OPEN_SQUIRLY, "{"); break;
+            case '}': tk_onechar(TK_CLOSE_SQUIRLY, "}"); break;
+            case '>': tk_twochar(TK_GREATER_THAN, ">", TK_GREATER_EQUAL, ">="); break;
+            case '<': tk_twochar(TK_LESS_THAN, "<", TK_LESS_EQUAL, "<="); break;
+            case '=': tk_twochar(TK_EQUAL, "=", TK_EQUAL_EQUAL, "=="); break;
            
             case '\'': 
             case '"':

@@ -7,7 +7,12 @@
 #include <string.h>
 #include "In.h"
 
+static void loopthrough_clause_logic(PtrVec* go, GenState* gs, Node* nd);
+static void loopthrough_clause_rodata(PtrVec* go, GenState* gs, Node* nd);
 
+static inline bool is_number(char* n) {
+    return n[0] >= '0' && n[0] <= '9' ? true : false;
+}
 
 static char* add_quotes_to_string(char* str) {
     size_t ln = strlen(str);
@@ -43,18 +48,22 @@ static StringLiteral* retrieve_string_literal(char* lbl, GenState* gs) {
     for (int i = 0; i < _strsiz; i++)             \
         x[_xsiz][i] = _str[i];}
 
+#define sprintf_buf_asm(_x, _xsiz, _bufsiz, ...)  \
+{ char buf[_bufsiz];                              \
+    sprintf(buf, __VA_ARGS__);                    \
+    cpystrto_asm(_x, _xsiz, _bufsiz, buf);}
+
+
 static char** logic_unit_start(void) {
     char** x = LuaMem_Alloc(sizeof(void*)*3);
     cpystrto_asm(x, 0, 6, ".text");
     cpystrto_asm(x, 1, 15, ".global _start");
-    cpystrto_asm(x, 2, 8, ".start:");
+    cpystrto_asm(x, 2, 8, "_start:");
     return x;
 }
 static char** jmp_exit(int EXIT_CODE) {
     char** x = LuaMem_Alloc(sizeof(void*)*2);
-    char buf[20];
-    sprintf(buf, "mov $%d, %rdi", EXIT_CODE);
-    cpystrto_asm(x, 0, 20, buf);
+    sprintf_buf_asm(x, 0, 20, "mov $%d, %rdi", EXIT_CODE);
     cpystrto_asm(x, 1, 9, "jmp EXIT");
     return x;
 }
@@ -68,28 +77,69 @@ static char** exit_asm(void) {
 static char** syswrite_fixed_siz(int STDBUFFER, char* LABEL_NAME, int LABEL_SIZ) {
     char** x = LuaMem_Alloc(sizeof(void*)*5);
     cpystrto_asm(x, 0, 20, "mov $1, %rax");
-    char stdbufuh[20];
-    char lblnmbufuh[20];
-    char lblsizbufuh[20];
-    sprintf(stdbufuh, "mov $%d, %rdi", STDBUFFER);
-    sprintf(lblnmbufuh, "mov %s, %rsi", LABEL_NAME);
-    sprintf(lblsizbufuh, "mov $%d, %rdx", LABEL_SIZ);
-    cpystrto_asm(x, 1, 20, stdbufuh);
-    cpystrto_asm(x, 2, 20, lblnmbufuh);
-    cpystrto_asm(x, 3, 20, lblsizbufuh);
+    sprintf_buf_asm(x, 1, 20, "mov $%d, %rdi", STDBUFFER);
+    sprintf_buf_asm(x, 2, 20, "lea %s, %rsi", LABEL_NAME);
+    sprintf_buf_asm(x, 3, 20, "mov $%d, %rdx", LABEL_SIZ);
     cpystrto_asm(x, 4, 8, "syscall");
     return x;
 }
 static int strlit_counter = 0;
 static char** string_literal_asm(char* STRLIT) {
     char** x = LuaMem_Alloc(sizeof(void*)*2);
-    char slbf[20];
-    char ascizbf[20+strlen(STRLIT)];
-    sprintf(slbf, "SL%d:", strlit_counter);
-    sprintf(ascizbf, ".asciz %s", STRLIT);
-    cpystrto_asm(x, 0, 7, slbf);
-    cpystrto_asm(x, 1, 8+strlen(STRLIT), ascizbf);
+    sprintf_buf_asm(x, 0, 20, "SL%d:", strlit_counter);
+    sprintf_buf_asm(x, 1, 20+strlen(STRLIT), ".asciz %s", STRLIT);
     strlit_counter++;
+    return x;
+}
+static int cmp_counter = 0;
+static char** binary_if_asm(char* frst, char* scnd, NDKind operator) {
+    char** x = LuaMem_Alloc(sizeof(void*)*5);
+    if (is_number(frst)) {
+        sprintf_buf_asm(x, 0, 20, "mov $%s, %rax", frst);
+    } else {
+        sprintf_buf_asm(x, 0, 20, "mov %s, %rax", frst);
+    }
+    if (is_number(scnd)) {
+        sprintf_buf_asm(x, 1, 20, "mov $%s, %rbx", scnd);
+    } else {
+        sprintf_buf_asm(x, 1, 20, "mov %s, %rbx", scnd);
+    }
+    cpystrto_asm(x, 2, 20, "cmp %rbx, %rax");
+    switch (operator) {
+        case ND_GREATER_THAN:
+            sprintf_buf_asm(x, 3, 20, "jg CMP%d", cmp_counter);
+            break;
+        case ND_GREATER_EQUAL:
+            sprintf_buf_asm(x, 3, 20, "jge CMP%d", cmp_counter);
+            break;
+        case ND_LESS_THAN:
+            sprintf_buf_asm(x, 3, 20, "jl CMP%d", cmp_counter);
+            break;
+        case ND_LESS_EQUAL:
+            sprintf_buf_asm(x, 3, 20, "jle CMP%d", cmp_counter);
+            break;
+        case ND_EQUAL_EQUAL:
+            sprintf_buf_asm(x, 3, 20, "je CMP%d", cmp_counter);
+            break;
+    }
+    sprintf_buf_asm(x, 4, 30, "CMP%dReturnAfter:", cmp_counter);
+
+    cmp_counter++;
+    return x;
+}
+static char** binary_if_label_asm(char* lbl) {
+    char** x = LuaMem_Alloc(sizeof(void*)*1);
+    sprintf_buf_asm(x, 0, 8, "%s:", lbl);
+    return x;
+}
+static char** binary_if_return_asm(char* lbl) {
+    char** x = LuaMem_Alloc(sizeof(void*)*1);
+    sprintf_buf_asm(x, 0, 30, "jmp %sReturnAfter", lbl);
+    return x;
+}
+static char** ret_asm(void) {
+    char** x = LuaMem_Alloc(sizeof(void*)*1);
+    cpystrto_asm(x, 0, 4, "ret");
     return x;
 }
 
@@ -103,7 +153,11 @@ static char** string_literal_asm(char* STRLIT) {
 
 /* main */
 
-// rodata
+/*
+==================================
+RODATA
+==================================
+*/
 static void create_string_literal(PtrVec* go, GenState* gs, Node* nd) {
     char* quote_str = add_quotes_to_string(nd->v);
     push_func(string_literal_asm, (quote_str), 2, AFNC_NULL, gs);
@@ -114,6 +168,7 @@ static void create_string_literal(PtrVec* go, GenState* gs, Node* nd) {
     sl->lbl = LuaMem_Zeroalloc(strlen(lbl));
     for (int i = 1; i < strlen(lbl); i++)
         sl->lbl[i-1] = lbl[i];
+    
     sl->v = strdup(quote_str);
     LuaUtil_PtrVec_Push(gs->glb.string_literals, sl);
 
@@ -134,6 +189,9 @@ static void evaluate_statement_rodata(PtrVec* go, GenState* gs, Node* nd) {
                 }
             }
             break;
+        case ND_IF_STATEMENT:
+            loopthrough_clause_rodata(go, gs, nd);
+            break;
     }
 }
 static void loopthrough_clause_rodata(PtrVec* go, GenState* gs, Node* nd) {
@@ -143,18 +201,26 @@ static void loopthrough_clause_rodata(PtrVec* go, GenState* gs, Node* nd) {
             for (int i = 0; i < nd->next.s; i++)
                 evaluate_statement_rodata(go, gs, nd->next.r[i]);
             break;
+        case ND_IF_STATEMENT:
+            for (int i = 1; i < nd->next.s; i++)
+                evaluate_statement_rodata(go, gs, nd->next.r[i]);
+            break;
     }
 }
 static inline void rodata_stage(PtrVec* go, GenState* gs, ParseOut* po) {
     loopthrough_clause_rodata(go, gs, po->root);
 }
 
-/*********/
-/* logic */
-static inline void call_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
-  
+
+/*
+==================================
+LOGIC
+==================================
+*/
+static inline void print_call_logic(PtrVec* go, GenState* gs, Node* nd) {
     for (int i = 0; i < nd->next.s; i++) {
         Node* nxt = nd->next.r[i];
+
 
         switch (nxt->v[0]) {
             case '"':
@@ -169,16 +235,65 @@ static inline void call_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
                 LuaMem_Free(v);
                 break;
         }
+    } 
+}
+
+static inline void call_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
+    if (strcmp(nd->v, "print") == 0 || strcmp(nd->v, "println") == 0) {
+        print_call_logic(go, gs, nd);
     }
 
 }
+
+static inline void if_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
+    /* get if statement info */
+    Node* condition = nd->next.r[0];
+    Node* frst = condition;
+    Node* scnd = NULL;
+    NDKind operator = ND_NULL;
+
+    Node* nxt = condition;
+    for (;;) {
+        if (scnd) break;
+        switch (nxt->k) {
+            case ND_GREATER_THAN:
+            case ND_GREATER_EQUAL:
+            case ND_LESS_THAN:
+            case ND_LESS_EQUAL:
+            case ND_EQUAL_EQUAL:
+                operator = nxt->k;
+                scnd = nxt->next.r[0];
+                break;
+        }
+
+        if (nxt->next.s > 0) {
+            nxt = nxt->next.r[0];
+        } else {
+            break;
+        }
+    }
+
+    push_func(binary_if_asm, (frst->v, scnd->v, operator), 5, AFNC_BINARY_IF, gs);
+    AsmFutureScope* fs = LuaMem_Alloc(sizeof(AsmFutureScope));
+    fs->lbl = LuaMem_Zeroalloc(8);
+    fs->nd = nd;
+    sprintf(fs->lbl, "CMP%d", cmp_counter-1);
+    LuaUtil_PtrVec_Push(gs->glb.future_scopes.cmps, fs);
+    //loopthrough_clause_logic(go, gs, nd);
+}
+
+/* evaluate statement */
 static void evaluate_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
     switch (nd->k) {
         case ND_CALL_STATEMENT:
             call_statement_logic(go, gs, nd);
             break;
+        case ND_IF_STATEMENT:
+            if_statement_logic(go, gs, nd);
+            break;
     }
 }
+
 static void loopthrough_clause_logic(PtrVec* go, GenState* gs, Node* nd) {
     switch (nd->k) {
         case ND_NULL:
@@ -186,12 +301,35 @@ static void loopthrough_clause_logic(PtrVec* go, GenState* gs, Node* nd) {
             for (int i = 0; i < nd->next.s; i++)
                 evaluate_statement_logic(go, gs, nd->next.r[i]);
             break;
+        case ND_IF_STATEMENT:
+            for (int i = 1; i < nd->next.s; i++)
+                evaluate_statement_logic(go, gs, nd->next.r[i]);
+            break;
     }
 }
-static inline void logic_stage(PtrVec* go, GenState* gs, ParseOut* po) {
-    loopthrough_clause_logic(go, gs, po->root);
+
+/* future scopes */
+static inline void logic_make_future_scopes(PtrVec* go, GenState* gs) {
+    
+    /* if statements */
+    for (int i = 0; i < gs->glb.future_scopes.cmps->siz; i++) {
+        AsmFutureScope* fs = gs->glb.future_scopes.cmps->items[i];
+        push_func(binary_if_label_asm, (fs->lbl), 1, AFNC_BINARY_IF_LBL, gs);
+        loopthrough_clause_logic(go, gs, fs->nd);
+        push_func(binary_if_return_asm, (fs->lbl), 1, AFNC_BINARY_IF_RET, gs);
+        //push_func(ret_asm, (), 1, AFNC_RET, gs);
+    }
+
 }
 
+// main
+static inline void logic_stage(PtrVec* go, GenState* gs, ParseOut* po) {
+    push_func(logic_unit_start, (), 3, AFNC_NULL, gs);
+    loopthrough_clause_logic(go, gs, po->root);
+    push_func(jmp_exit, (0), 2, AFNC_NULL, gs);
+    logic_make_future_scopes(go, gs);
+    push_func(exit_asm, (), 3, AFNC_NULL, gs);
+}
 
 /* API */
 PtrVec* LuaGen_x86_64_Linux(ParseOut* po) {
@@ -200,6 +338,9 @@ PtrVec* LuaGen_x86_64_Linux(ParseOut* po) {
     GenState gs = {
         .glb = {
             .string_literals = LuaUtil_Init_PtrVec(),
+            .future_scopes = {
+                .cmps = LuaUtil_Init_PtrVec(),
+            },
         },
 
         .last_asm_fn_call = AFNC_NULL,
@@ -214,15 +355,11 @@ PtrVec* LuaGen_x86_64_Linux(ParseOut* po) {
     rodata_stage(go, &gs, po);
 
     /* #3: logic */
-    push_func(logic_unit_start, (), 3, AFNC_NULL, (&gs));
     logic_stage(go, &gs, po);
-    push_func(jmp_exit, (0), 2, AFNC_NULL, (&gs));
 
     /* finish */
-    push_func(exit_asm, (), 3, AFNC_NULL, (&gs));
-
     for (int i = 0; i < go->siz; i++)
-        printf("%s\n", go->items[i]);
+       printf("%s\n", go->items[i]);
 
     /* cleanup */
     for (int i = 0; i < gs.glb.string_literals->siz; i++) {
@@ -231,7 +368,12 @@ PtrVec* LuaGen_x86_64_Linux(ParseOut* po) {
         LuaMem_Free(sl->v);
         LuaMem_Free(sl);
     }
+    for (int i = 0; i < gs.glb.future_scopes.cmps->siz; i++) {
+        AsmFutureScope* fs = gs.glb.future_scopes.cmps->items[i];
+        LuaMem_Free(fs->lbl);
+    }
     LuaUtil_Free_PtrVec(gs.glb.string_literals);
+    LuaUtil_Free_PtrVec(gs.glb.future_scopes.cmps);
     return go;
 }
 void LuaGen_Free(PtrVec *go) {
