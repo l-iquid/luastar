@@ -124,6 +124,9 @@ static inline void keyword(ParseState* ps, Token* tk) {
        set_nd_next(ps->next, nd);
        auto_next(ps);
     }
+    if (strcmp(tk->v, "else") == 0) {
+        
+    }
 }
 static inline void function_call(ParseState* ps, Token* tk) {
     make_nd_routine(ND_CALL_STATEMENT, tk);

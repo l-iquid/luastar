@@ -12,7 +12,7 @@
 #define LEXER_TKLST_REALLOC_CAP 8
 
 static const char* lkeywords[] = {
-    "local", "if"
+    "local", "if", "else"
 };
 static const char* lglobals[] = {
     "print", "println"
