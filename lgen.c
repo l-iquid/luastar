@@ -92,8 +92,8 @@ static char** string_literal_asm(char* STRLIT) {
     return x;
 }
 static int cmp_counter = 0;
-static char** binary_if_asm(char* frst, char* scnd, NDKind operator) {
-    char** x = LuaMem_Alloc(sizeof(void*)*5);
+static char** binary_if_asm(char* frst, char* scnd, NDKind operator, int has_else) {
+    char** x = LuaMem_Alloc(sizeof(void*)*6);
     if (is_number(frst)) {
         sprintf_buf_asm(x, 0, 20, "mov $%s, %rax", frst);
     } else {
@@ -122,7 +122,12 @@ static char** binary_if_asm(char* frst, char* scnd, NDKind operator) {
             sprintf_buf_asm(x, 3, 20, "je CMP%d", cmp_counter);
             break;
     }
-    sprintf_buf_asm(x, 4, 30, "CMP%dReturnAfter:", cmp_counter);
+    if (has_else) {
+        sprintf_buf_asm(x, 4, 20, "jmp ELSE%d", cmp_counter);
+    } else {
+        cpystrto_asm(x, 4, 20, "; NO ELSE DETECTED");
+    }
+    sprintf_buf_asm(x, 5, 30, "CMP%dReturnAfter:", cmp_counter);
 
     cmp_counter++;
     return x;
@@ -273,7 +278,7 @@ static inline void if_statement_logic(PtrVec* go, GenState* gs, Node* nd) {
         }
     }
 
-    push_func(binary_if_asm, (frst->v, scnd->v, operator), 5, AFNC_BINARY_IF, gs);
+    push_func(binary_if_asm, (frst->v, scnd->v, operator, 0), 6, AFNC_BINARY_IF, gs);
     AsmFutureScope* fs = LuaMem_Alloc(sizeof(AsmFutureScope));
     fs->lbl = LuaMem_Zeroalloc(8);
     fs->nd = nd;
