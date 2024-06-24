@@ -8,7 +8,7 @@
 #include "In.h"
 
 /* configs */
-#define LEXER_TKLST_INIT_CAP    8
+#define LEXER_TKLST_INIT_CAP    16
 #define LEXER_TKLST_REALLOC_CAP 8
 
 static const char* lkeywords[] = {
@@ -36,9 +36,7 @@ static inline int is_lglobal(char* v)
 static inline int is_ltype(char* v)
 {is_in_ltab(ltypes, v);}
 static inline int is_bool(char* v) {
-    if (strcmp(v, "true") == 0 || strcmp(v, "false") == 0)
-        return 1;
-    return 0;
+    return (strcmp(v, "true") == 0 || strcmp(v, "false") == 0) ? 1 : 0;
 }
 
 /************/

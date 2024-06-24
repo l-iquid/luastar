@@ -125,7 +125,7 @@ static char** binary_if_asm(char* frst, char* scnd, NDKind operator, int has_els
     if (has_else) {
         sprintf_buf_asm(x, 4, 20, "jmp ELSE%d", cmp_counter);
     } else {
-        cpystrto_asm(x, 4, 20, "; NO ELSE DETECTED");
+        cpystrto_asm(x, 4, 20, "");
     }
     sprintf_buf_asm(x, 5, 30, "CMP%dReturnAfter:", cmp_counter);
 

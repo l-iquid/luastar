@@ -117,7 +117,9 @@ static inline void literal(ParseState* ps, Token* tk) {
 }
 static inline void keyword(ParseState* ps, Token* tk) {
     if (strcmp(tk->v, "local") == 0) {
-        
+       make_nd_routine(ND_VARIABLE_DECLARATION, tk);
+       set_nd_next(ps->next, nd);
+       auto_next(ps);
     }
     if (strcmp(tk->v, "if") == 0) {
        make_nd_routine(ND_IF_STATEMENT, tk);
@@ -193,7 +195,9 @@ static inline void comma(ParseState* ps, Token* tk) {
     } 
 }
 static inline void colon(ParseState* ps, Token* tk) {
-    
+   /* next tk is type */
+   make_nd_routine(ND_TYPE, tk->next);
+   set_nd_next(ps->next, nd);
 }
 static inline void binary_operator(ParseState* ps, Token* tk) {
     NDKind k;
@@ -227,6 +231,7 @@ static inline void consume_tokens(ParseState* ps, LexerOut* lo) {
         Token* tk = lo->tks[i];
         
         switch (tk->k) {
+            case TK_TYPE:
             case TK_QUOTE:
                 break;
             case TK_OPEN_SQUIRLY:
